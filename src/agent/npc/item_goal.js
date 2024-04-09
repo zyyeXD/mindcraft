@@ -309,7 +309,7 @@ export class ItemGoal {
         let next_info = this.goal.getNext(item_quantity);
         if (!next_info) {
             console.log(`Invalid item goal ${this.goal.name}`);
-            return;
+            return {success: false, message: null};
         }
         let next = next_info.node;
         let quantity = next_info.quantity;
@@ -330,12 +330,12 @@ export class ItemGoal {
                 await new Promise((resolve) => setTimeout(resolve, 500));
                 this.agent.bot.emit('idle');
             }
-            return;
+            return {success: false, message: null};
         }
 
         // Wait for the bot to be idle before attempting to execute the next goal
         if (!this.agent.isIdle())
-            return;
+            return {success: false, message: null};
 
         // Execute the next goal
         let init_quantity = world.getInventoryCounts(this.agent.bot)[next.name] || 0;
@@ -344,11 +344,15 @@ export class ItemGoal {
         });
         let final_quantity = world.getInventoryCounts(this.agent.bot)[next.name] || 0;
 
+        let res = null;
         // Log the result of the goal attempt
         if (final_quantity > init_quantity) {
             console.log(`Successfully obtained ${next.name} for goal ${this.goal.name}`);
+            res = {success: true, message: `Obtained subgoal ${next.name} for goal ${this.goal.name}.`};
         } else {
             console.log(`Failed to obtain ${next.name} for goal ${this.goal.name}`);
+            res = {success: true, message: `Failed to obtain subgoal ${next.name} for goal ${this.goal.name}.`};
         }
+        return res;
     }
 }

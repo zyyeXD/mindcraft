@@ -43,6 +43,10 @@ export const queryList = [
             if (other_players.length > 0) {
                 res += '\n- Other Players: ' + other_players.join(', ');
             }
+
+            if (agent.npc && agent.npc.data.curr_goal) {
+                res += `\n- Current Goal: ${agent.npc.data.curr_goal}`;
+            }
             return pad(res);
         }
     },

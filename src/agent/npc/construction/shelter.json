@@ -1,6 +1,7 @@
 {
     "name": "shelter",
     "offset": -1,
+    "is_home": true,
     "placement": [
         [1, 1, 1],
         [1, 2, 1],

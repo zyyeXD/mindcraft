@@ -66,7 +66,27 @@ export class NPCContoller {
     async executeNext() {
         if (!this.agent.isIdle()) return;
 
-        if (this.agent.bot.time.timeOfDay < 12000) { 
+        if (this.agent.bot.time.timeOfDay < 13000) {
+            // Set daily goal
+            if (this.data.curr_goal === null) {
+                let next_goal = await this.agent.prompter.promptGoal(
+                    this.agent.history.getHistory(),
+                    this.data.prev_goal ? this.data.prev_goal.name : null,
+                    this.data.prev_goal ? this.goalSatisfied(this.data.prev_goal.name, this.data.prev_goal.quantity): null,
+                    this.data.prev_goal ? this.constructions[this.data.prev_goal.name] === undefined: null,
+                    Object.keys(this.constructions)
+                )
+                if (next_goal !== null) {
+                    try {
+                        this.data.curr_goal = JSON.parse(next_goal);
+                        console.log('Set goal to ', this.data.curr_goal);
+                        this.agent.history.add('system', `Set goal to ${this.data.curr_goal.name} x${this.data.curr_goal.quantity}.`);
+                    } catch (e) {
+                        console.log(`Error setting goal ${next_goal}: `, e);
+                    }
+                }
+            }
+
             // Exit any buildings
             let building = this.currentBuilding();
             if (building) {
@@ -82,6 +102,10 @@ export class NPCContoller {
             await this.executeGoal();
 
         } else {
+            // Reset current goal
+            this.data.prev_goal = this.data.curr_goal;
+            this.data.curr_goal = null;
+
             // Return to home
             let building = this.currentBuilding();
             if (this.data.home !== null && (building === null || building != this.data.home)) {
@@ -100,7 +124,8 @@ export class NPCContoller {
 
     async executeGoal() {
         // If we need more blocks to complete a building, get those first
-        let goals = this.temp_goals.concat(this.data.goals);
+        let goals = this.temp_goals.concat(this.data.base_goals);
+        if (this.data.curr_goal !== null) goals.push(this.data.curr_goal);
         this.temp_goals = [];
 
         for (let goal of goals) {
@@ -108,7 +133,9 @@ export class NPCContoller {
             // Obtain goal item or block
             if (this.constructions[goal.name] === undefined) {
                 if (!itemSatisfied(this.agent.bot, goal.name, goal.quantity)) {
-                    await this.item_goal.executeNext(goal.name, goal.quantity);
+                    let res = await this.item_goal.executeNext(goal.name, goal.quantity);
+                    if (res.message !== null && res.message !== '')
+                        this.agent.history.add('system', res.message);
                     break;
                 }
             }
@@ -127,11 +154,9 @@ export class NPCContoller {
                     this.data.built[goal.name] = {
                         name: goal.name,
                         position: res.position,
-                        orientation: res.orientation
+                        orientation: res.orientation,
+                        finished: false
                     };
-                }
-                if (Object.keys(res.missing).length === 0) {
-                    this.data.home = goal.name;
                 }
                 for (let block_name in res.missing) {
                     this.temp_goals.push({
@@ -139,12 +164,31 @@ export class NPCContoller {
                         quantity: res.missing[block_name]
                     })
                 }
-                if (res.acted) break;
+                if (res.acted) {
+                    if (Object.keys(res.missing).length === 0) {
+                        if (this.constructions[goal.name].is_home)
+                            this.data.home = goal.name;
+                        this.data.built[goal.name].finished = true;
+                        this.agent.history.add('system', `Finished building ${goal.name}.`);
+                    } else {
+                        this.agent.history.add('system', `Progressed towards building ${goal.name}.`);
+                    }
+                    break;
+                }
             }
         }
 
         if (this.agent.isIdle())
             this.agent.bot.emit('idle');
+    }
+
+    goalSatisfied(goal_name, goal_quantity) {
+        if (!goal_name) return false;
+        if (this.constructions[goal_name] === undefined) {
+            return itemSatisfied(this.agent.bot, goal_name, goal_quantity);
+        } else {
+            return this.data.built.hasOwnProperty(goal_name) && this.data.built[goal_name].finished;
+        }
     }
 
     currentBuilding() {

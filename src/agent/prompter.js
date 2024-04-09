@@ -86,4 +86,32 @@ export class Prompter {
         prompt = await this.replaceStrings(prompt, null, null, prev_mem, to_summarize);
         return await this.model.sendRequest([], prompt);
     }
+
+    async promptGoal(messages, prev_goal, prev_success, prev_was_item, buildings) {
+        let prompt = this.prompts.goal_select;
+        prompt = prompt.replaceAll('$NAME', this.agent.name);
+        if (prompt.includes('$GOAL_TYPE') && prev_was_item !== null)
+            prompt = prompt.replaceAll('$GOAL_TYPE', prev_was_item ? 'obtaining a' : 'building a');
+        if (prompt.includes('$GOAL'))
+            prompt = prompt.replaceAll('$GOAL', prev_goal ? prev_goal : 'NONE');
+        if (prompt.includes('$SUCCESS'))
+            prompt = prompt.replaceAll('$SUCCESS', prev_success ? 'have' : 'have not');
+        if (prompt.includes('$BUILDINGS')) {
+            let buildings_str = '';
+            for (let building of buildings) {
+                buildings_str += building + ', ';
+            }
+            buildings_str = buildings_str.slice(0, -2);
+            prompt = prompt.replaceAll('$BUILDINGS', buildings_str);
+        }
+        if (prompt.includes('$HISTORY')) {
+            let history_str = '';
+            for (let message of messages) {
+                history_str += message.source + ': ' + message.content + '\n';
+            }
+            history_str = history_str.trim();
+            prompt = prompt.replaceAll('$HISTORY', history_str);
+        }
+        return await this.model.sendRequest([{'role': 'user', 'content': 'Output your next goal.'}], prompt);
+    }
 }
