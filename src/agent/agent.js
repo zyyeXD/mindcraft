@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs';
 import { History } from './history.js';
 import { Coder } from './coder.js';
 import { Prompter } from './prompter.js';
@@ -19,6 +20,9 @@ export class Agent {
         this.npc = new NPCContoller(this);
         this.memory_bank = new MemoryBank();
         this.self_prompter = new SelfPrompter(this);
+
+        this.agent_names = settings.profiles.map((p) => JSON.parse(readFileSync(p, 'utf8')).name);
+        this.other_name = this.agent_names.filter((n) => n !== this.name)[0];
 
         await this.prompter.initExamples();
 
@@ -47,9 +51,8 @@ export class Agent {
                 "Set the weather to",
                 "Gamerule "
             ];
-            const eventname = settings.profiles.length > 1 ? 'whisper' : 'chat';
-            this.bot.on(eventname, async (username, message) => {
-                if (username === this.name) return;
+            this.bot.on('whisper', async (username, message) => {
+                if (username !== this.other_name) return;
                 
                 if (ignore_messages.some((m) => message.startsWith(m))) return;
 
@@ -85,6 +88,11 @@ export class Agent {
             }
 
             this.startEvents();
+
+            if (this.agent_names[0] == this.name) {
+                this.handleMessage('system', 'Begin your conversation with the other player.');
+                this.handleMessage('system', '(end of response)');
+            }
         });
     }
 
@@ -99,6 +107,7 @@ export class Agent {
         message = (await handleTranslation(to_translate)).trim() + " " + remainging;
         // newlines are interpreted as separate chats, which triggers spam filters. replace them with spaces
         message = message.replaceAll('\n', ' ');
+        this.bot.whisper(this.other_name, message);
         return this.bot.chat(message);
     }
 
@@ -117,25 +126,25 @@ export class Agent {
 
         let self_prompt = source === 'system' || source === this.name;
 
-        if (!self_prompt) {
-            const user_command_name = containsCommand(message);
-            if (user_command_name) {
-                if (!commandExists(user_command_name)) {
-                    this.bot.chat(`Command '${user_command_name}' does not exist.`);
-                    return false;
-                }
-                this.bot.chat(`*${source} used ${user_command_name.substring(1)}*`);
-                if (user_command_name === '!newAction') {
-                    // all user initiated commands are ignored by the bot except for this one
-                    // add the preceding message to the history to give context for newAction
-                    this.history.add(source, message);
-                }
-                let execute_res = await executeCommand(this, message);
-                if (execute_res) 
-                    this.cleanChat(execute_res);
-                return true;
-            }
-        }
+        // if (!self_prompt) {
+        //     const user_command_name = containsCommand(message);
+        //     if (user_command_name) {
+        //         if (!commandExists(user_command_name)) {
+        //             this.bot.chat(`Command '${user_command_name}' does not exist.`);
+        //             return false;
+        //         }
+        //         this.bot.chat(`*${source} used ${user_command_name.substring(1)}*`);
+        //         if (user_command_name === '!newAction') {
+        //             // all user initiated commands are ignored by the bot except for this one
+        //             // add the preceding message to the history to give context for newAction
+        //             this.history.add(source, message);
+        //         }
+        //         let execute_res = await executeCommand(this, message);
+        //         if (execute_res) 
+        //             this.cleanChat(execute_res);
+        //         return true;
+        //     }
+        // }
 
         const checkInterrupt = () => this.self_prompter.shouldInterrupt(self_prompt) || this.shut_up;
 
@@ -149,8 +158,11 @@ export class Agent {
             await this.history.add('system', behavior_log);
         }
 
-        await this.history.add(source, message);
-        this.history.save();
+        if (message != '(end of response)') {
+            await this.history.add(source, message);
+            this.history.save();
+            return;
+        }
 
         if (!self_prompt && this.self_prompter.on) // message is from user during self-prompting
             max_responses = 1; // force only respond to this message, then let self-prompting take over
@@ -186,7 +198,7 @@ export class Agent {
                     let chat_message = `*used ${command_name.substring(1)}*`;
                     if (pre_message.length > 0)
                         chat_message = `${pre_message}  ${chat_message}`;
-                    this.cleanChat(res);
+                    this.cleanChat(chat_message);
                 }
 
                 let execute_res = await executeCommand(this, res);
@@ -209,6 +221,7 @@ export class Agent {
         }
 
         this.bot.emit('finished_executing');
+        this.bot.whisper(this.other_name, '(end of response)');
         return used_command;
     }
 
