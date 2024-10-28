@@ -9,6 +9,7 @@ import { MemoryBank } from './memory_bank.js';
 import { SelfPrompter } from './self_prompter.js';
 import { handleTranslation, handleEnglishTranslation } from '../utils/translator.js';
 import { addViewer } from './viewer.js';
+import { appendFileSync, writeFileSync } from 'fs';
 import settings from '../../settings.js';
 
 export class Agent {
@@ -39,6 +40,8 @@ export class Agent {
             // wait for a bit so stats are not undefined
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
+            writeFileSync(`./bots/${this.name}/reset.txt`, 'reset');
+
             console.log(`${this.name} spawned.`);
             this.coder.clear();
             
@@ -52,8 +55,11 @@ export class Agent {
             ];
             const eventname = settings.profiles.length > 1 ? 'whisper' : 'chat';
             this.bot.on(eventname, async (username, message) => {
-                if (username === this.name) return;
-                
+                if (username === this.name) {
+                    this.log(message);
+                    return;
+                }
+
                 if (ignore_messages.some((m) => message.startsWith(m))) return;
 
                 let translation = await handleEnglishTranslation(message);
@@ -87,8 +93,20 @@ export class Agent {
                 this.bot.emit('finished_executing');
             }
 
+            setInterval(() => {this.logStats()}, 10000);
             this.startEvents();
         });
+    }
+
+
+    async logStats() {
+        let res = await executeCommand(this, '!stats');
+        res += await executeCommand(this, '!inventory');
+        writeFileSync(`./bots/${this.name}/stats.txt`, res);
+    }
+
+    log(message) {
+        appendFileSync(`./bots/${this.name}/logs.txt`, message + '\n');
     }
 
 
